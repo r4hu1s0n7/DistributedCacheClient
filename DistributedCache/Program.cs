@@ -1,15 +1,19 @@
 ﻿using DistributedCacheLibrary;
+using Microsoft.Extensions.Configuration;
 using System.Net;
 using System.Net.Sockets;
+var config = new ConfigurationBuilder().AddJsonFile("appsettings.json").Build(); // load config
+
 
 Console.WriteLine("CACHE Client:");
 Console.WriteLine("+-------------------------------------------+");
 Console.WriteLine("get [key] | set [key] [value] [seconds*] | status | exit");
 Console.WriteLine("+-------------------------------------------+");
 
+
 const int ReadBufferSize = 1024 * 2;
-const int Port = 9500;
-const string IP = "127.0.0.1";
+int Port = Convert.ToInt32(config["ServerPort"]);
+string IP = config["ServerIP"];
 IPAddress IPaddr = IPAddress.Parse(IP);
 
 while (true)
