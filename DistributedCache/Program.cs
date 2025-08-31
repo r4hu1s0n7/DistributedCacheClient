@@ -1,5 +1,6 @@
 ﻿using DistributedCacheLibrary;
 using Microsoft.Extensions.Configuration;
+using System.Collections.Concurrent;
 using System.Net;
 using System.Net.Sockets;
 var config = new ConfigurationBuilder().AddJsonFile("appsettings.json").Build(); // load config
@@ -15,30 +16,58 @@ const int ReadBufferSize = 1024 * 2;
 int Port = Convert.ToInt32(config["ServerPort"]);
 string IP = config["ServerIP"];
 IPAddress IPaddr = IPAddress.Parse(IP);
+ConcurrentQueue<TcpClient> _connectionPool = new();
+object _lock = new();
+
+
+var tasks = new List<Task>();
+const int BatchSize = 100;
+int MaxParallelism = Environment.ProcessorCount * 2;
+
+//for (int batch = 0; batch < 1_000_000; batch += BatchSize)
+//{
+//    if (tasks.Count >= MaxParallelism)
+//    {
+//        await Task.WhenAny(tasks);
+//        tasks.RemoveAll(t => t.IsCompleted);
+//    }
+
+//    var batchTask = Task.Run(() => ProcessBatch(batch, Math.Min(BatchSize, 1_000_000 - batch)));
+//    tasks.Add(batchTask);
+//}
+
+
 
 while (true)
 {
     Console.Write(">>  ");
     var input = Console.ReadLine();
-    string command = input.Split(" ")[0].Trim();
-    switch (command)
+    for (int i = 0; i < 1_000_00; i++)
     {
-           
-        case "get":
-            ProcessGetCommand(input);
-            break;
-        case "set":
-            ProcessSetCommand(input);
-            break;
-        case "status":
-            //  status of node connected
-            break;
-        case "exit":
-            System.Environment.Exit(0);
-            break;
-        default:
-            Console.WriteLine("Unknown command");
-            break;
+        await Task.Delay(10);
+        input = $"SET k{i} {i}";
+        Console.WriteLine(input);
+        string command = input.Split(" ")[0].Trim().ToLower();
+        switch (command)
+        {
+
+            case "get":
+                ProcessGetCommand(input);
+                break;
+            case "set":
+                ProcessSetCommand(input);
+                break;
+            case "status":
+                //  status of node connected
+                Console.WriteLine("To be implemented");
+                break;
+            case "exit":
+                System.Environment.Exit(0);
+                break;
+            default:
+                Console.WriteLine("Unknown command");
+                break;
+        }
     }
 }
 
@@ -94,17 +123,36 @@ void ProcessGetCommand(string command)
 
 byte[] Send(byte[] bytes)
 {
-    using(var client = new TcpClient(IP,Port))
-    using (var stream = client.GetStream())
-    {
-        stream.Write(bytes,0,bytes.Length);
-        var buffer = new byte[ReadBufferSize];
+    TcpClient client = null;
 
-        int bytesReadSize = stream.Read(buffer, 0, ReadBufferSize);
-        Console.WriteLine("Response Received");
-        stream.Close();
-        return buffer.Take(bytesReadSize).ToArray(); // take only bytes read, skip empty or 0 buffer
+    try
+    {
+        if (!_connectionPool.TryDequeue(out client) || !client.Connected)
+            client = new TcpClient(IP, Port);
+
+        using (var stream = client.GetStream())
+        {
+            stream.Write(bytes, 0, bytes.Length);
+            var buffer = new byte[ReadBufferSize];
+
+            int bytesReadSize = stream.Read(buffer, 0, ReadBufferSize);
+            Console.WriteLine("Response Received");
+            stream.Close();
+
+            if (client.Connected) // preserve connection
+                _connectionPool.Enqueue(client);
+
+            return buffer.Take(bytesReadSize).ToArray(); // take only bytes read, skip empty or 0 buffer
+
+
+        }
     }
+    catch
+    {
+        client?.Close();
+        throw;
+    }
+
 }
 
 void Print(List<object> items)
@@ -118,3 +166,33 @@ void Print(List<object> items)
     }
     Console.WriteLine();
 }
+
+//void ProcessBatch(int startIndex, int Count)
+//{
+//    using var client = new TcpClient(IP, Port);
+//    using var stream = client.GetStream();
+
+//    for (int i = 0; i < Count; i++)
+//    {
+//        var input = $"SET k{startIndex + i} {startIndex + i}";
+//        var bytes = RESP.Serialize(input);
+
+//        stream.Write(bytes, 0, bytes.Length);
+
+//        var buffer = new byte[ReadBufferSize];
+//        int bytesRead = stream.Read(buffer, 0, ReadBufferSize);
+//        Console.WriteLine("Response Received");
+//        var response = buffer.Take(bytesRead).ToArray();
+//        if (response.Length > 0)
+//        {
+//            Print(RESP.Deserialize(response));
+//        }
+//        else
+//        {
+//            Console.WriteLine("Empty Response");
+
+//        }
+//    }
+//    stream.Close();
+
+//}
