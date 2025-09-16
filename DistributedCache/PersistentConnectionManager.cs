@@ -22,6 +22,7 @@ namespace DistributedCacheClient
         private NetworkStream? _stream;
         private DateTime _lastActivity = DateTime.UtcNow;
         private bool _commandBatching;
+        private int _batchSize;
 
         public PersistentConnectionManager(string ip, int port, int bufferSize)
         {
@@ -30,6 +31,7 @@ namespace DistributedCacheClient
             _buffersize = bufferSize;
             var config = new ConfigurationBuilder().AddJsonFile("appsettings.json").Build();
             _commandBatching = Convert.ToBoolean(config["BatchCommands"]);
+            _batchSize = Convert.ToInt32(config["BatchSize"]);
         }
 
         private async Task<bool> EnsureConnectionAsync()
@@ -86,7 +88,6 @@ namespace DistributedCacheClient
             }
         }
 
-        // for sending single commands
         private async Task<byte[]> SendCommandAsync(byte[] sendbytes)
         {
             await _stream.WriteAsync(sendbytes, 0, sendbytes.Length);
@@ -96,42 +97,36 @@ namespace DistributedCacheClient
             return buffer.Take(bytesReadSize).ToArray(); // take only bytes read, skip empty or 0 buffer
         }
 
-        public async Task<List<List<object>>> SendBatchAsync(List<string> commands)
+        public async Task<byte[]> SendBatchAsync(byte[] sendbytes)
         {
 
             if (!await EnsureConnectionAsync())
             {
                 throw new Exception($"Could not Establish Connection with {_ip}:{_port}");
             }
-            var responses = new List<List<object>>();
+            
+            ConcurrentQueue<byte[]> commands = new();
+            
+            if(commands.Count == _batchSize)
+                await _connectionLock.WaitAsync();
 
-            await _connectionLock.WaitAsync();
-
-            try {
+            commands.Enqueue(sendbytes);
+            try 
+             {
+                var allCommands = new List<byte[]>();
                 foreach (var command in commands)
                 {
-                    var bytes = RESP.Serialize(command);
-                    await _stream!.WriteAsync(bytes);
+                    allCommands.Add(command);
                 }
 
-                for (int i = 0; i < commands.Count; i++)
-                {
-                    var buffer = new byte[_buffersize];
-                    int bytesRead = await _stream!.ReadAsync(buffer, 0, _buffersize);
+                await _stream!.WriteAsync(allCommands.SelectMany( a => a).ToArray());
 
-                    if (bytesRead > 0)
-                    {
-                        var response = RESP.Deserialize(buffer.Take(bytesRead).ToArray());
-                        responses.Add(response);
-                    }
-                    else
-                    {
-                        responses.Add(new List<object> { "Empty Response" });
-                    }
-                }
-
+               
+                var buffer = new byte[_buffersize];
+                int bytesRead = await _stream!.ReadAsync(buffer, 0, _buffersize);
+                
                 _lastActivity = DateTime.UtcNow;
-                return responses;
+                return buffer.Take(bytesRead).ToArray();
             }
             catch( Exception e)
             {

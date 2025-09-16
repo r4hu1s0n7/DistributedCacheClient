@@ -13,7 +13,7 @@ Console.WriteLine("get [key] | set [key] [value] [seconds*] | batch-set [count] 
 Console.WriteLine("+-------------------------------------------+");
 
 
-const int ReadBufferSize = 1024 * 2;
+const int ReadBufferSize = 4096 * 2;
 int Port = Convert.ToInt32(config["ServerPort"]);
 string IP = config["ServerIP"];
 IPAddress IPaddr = IPAddress.Parse(IP);
@@ -22,7 +22,7 @@ object _lock = new();
 var connection = new PersistentConnectionManager(IP, Port, ReadBufferSize);
 
 var tasks = new List<Task>();
-int BatchSize = Convert.ToInt32(config["BatchSize"]);
+
 
 
 
@@ -78,11 +78,12 @@ void ProcessBatchSet(string input)
             string command = $"set k{i} {i}";
         
             var bytes = RESP.Serialize(command);
-            var response = connection.SendAsync(bytes).Result;
+            var response = connection.SendBatchAsync(bytes).Result;
 
-            if (response.Length > 0)
+            if (response.Count > 0)
             {
-                Print(RESP.Deserialize(response));
+                foreach(var res in response)
+                Print(RESP.Deserialize(res));
             }
             else
             {
