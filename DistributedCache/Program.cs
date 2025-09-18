@@ -4,6 +4,7 @@ using Microsoft.Extensions.Configuration;
 using System.Collections.Concurrent;
 using System.Net;
 using System.Net.Sockets;
+using static System.Runtime.InteropServices.JavaScript.JSType;
 var config = new ConfigurationBuilder().AddJsonFile("appsettings.json").Build(); // load config
 
 
@@ -80,10 +81,9 @@ void ProcessBatchSet(string input)
             var bytes = RESP.Serialize(command);
             var response = connection.SendBatchAsync(bytes).Result;
 
-            if (response.Count > 0)
+            if (response.Length > 0)
             {
-                foreach(var res in response)
-                Print(RESP.Deserialize(res));
+                RESP.DeserializeBulkCommands(response);
             }
             else
             {

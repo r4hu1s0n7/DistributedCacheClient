@@ -23,6 +23,7 @@ namespace DistributedCacheClient
         private DateTime _lastActivity = DateTime.UtcNow;
         private bool _commandBatching;
         private int _batchSize;
+        ConcurrentQueue<byte[]> commands = new();
 
         public PersistentConnectionManager(string ip, int port, int bufferSize)
         {
@@ -104,11 +105,11 @@ namespace DistributedCacheClient
             {
                 throw new Exception($"Could not Establish Connection with {_ip}:{_port}");
             }
-            
-            ConcurrentQueue<byte[]> commands = new();
-            
-            if(commands.Count == _batchSize)
-                await _connectionLock.WaitAsync();
+
+
+            if (commands.Count < _batchSize)
+                return ;
+            await _connectionLock.WaitAsync();
 
             commands.Enqueue(sendbytes);
             try 
