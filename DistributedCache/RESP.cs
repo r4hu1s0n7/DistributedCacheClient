@@ -90,23 +90,30 @@ namespace DistributedCacheLibrary
             return sb.ToString();
         }
 
-        public static byte[] SerializeBatchResponse(object[] responses)
+        public static byte[] SerializeBatch(object[] responses)
         {
-            var responseStrings = new List<string>();
+            if (responses == null || responses.Length == 0)
+                return Encoding.UTF8.GetBytes("*0\r\n"); // Empty array
 
+            var sb = new StringBuilder();
+
+            // Start with array header
+            sb.Append($"*{responses.Length}\r\n");
+
+            // Add each response as array element
             foreach (var response in responses)
             {
                 if (response is string str)
-                    responseStrings.Add(SerializeString(str));
+                    sb.Append(SerializeBulkString(str));  // Use bulk string, not simple string
                 else if (response is int intVal)
-                    responseStrings.Add(SerializeInt(intVal));
+                    sb.Append(SerializeInt(intVal));
                 else if (response == null)
-                    responseStrings.Add(SerializeNull());
+                    sb.Append(SerializeNull());
                 else
-                    responseStrings.Add(SerializeBulkString(response.ToString()));
+                    sb.Append(SerializeBulkString(response.ToString()));
             }
 
-            return Encoding.UTF8.GetBytes(string.Join("", responseStrings));
+            return Encoding.UTF8.GetBytes(sb.ToString());
         }
 
         #endregion
@@ -373,7 +380,7 @@ namespace DistributedCacheLibrary
 
             var commands = new List<List<string>>();
             var data = Encoding.UTF8.GetString(bytes);
-            int pos = 0;
+             int pos = 0;
             try
             {
                 while (pos < data.Length)

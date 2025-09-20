@@ -107,20 +107,13 @@ namespace DistributedCacheClient
             }
 
 
-            if (commands.Count < _batchSize)
-                return ;
             await _connectionLock.WaitAsync();
 
             commands.Enqueue(sendbytes);
             try 
              {
-                var allCommands = new List<byte[]>();
-                foreach (var command in commands)
-                {
-                    allCommands.Add(command);
-                }
 
-                await _stream!.WriteAsync(allCommands.SelectMany( a => a).ToArray());
+                await _stream!.WriteAsync(sendbytes);
 
                
                 var buffer = new byte[_buffersize];

@@ -23,6 +23,7 @@ object _lock = new();
 var connection = new PersistentConnectionManager(IP, Port, ReadBufferSize);
 
 var tasks = new List<Task>();
+int _batchSize = Convert.ToInt32(config["BatchSize"]);
 
 
 
@@ -73,17 +74,34 @@ void ProcessBatchSet(string input)
 
     try
     {
+        List<string> commands = new List<string>();
         int count = Convert.ToInt32(input.Split(' ')[1]);
-        for (int i = 0; i < count; i++)
+        int processed = 0;
+        for (int i = 1; i <= count; i++)
         {
             string command = $"set k{i} {i}";
-        
-            var bytes = RESP.Serialize(command);
+
+            int currentbatchSize = Math.Min(_batchSize, count - processed);
+            
+            if (commands.Count < currentbatchSize-1)
+            {
+                   commands.Add(command);
+                   continue;
+            }
+            commands.Add(command);
+                
+            processed += currentbatchSize;
+            var bytes = RESP.SerializeBatch(commands.ToArray());
             var response = connection.SendBatchAsync(bytes).Result;
 
+            commands.Clear();
             if (response.Length > 0)
             {
-                RESP.DeserializeBulkCommands(response);
+                var output = RESP.DeserializeBulkCommands(response);
+                foreach(var o in output)
+                {
+                    Console.WriteLine(string.Join(" ", o));
+                }
             }
             else
             {
@@ -101,7 +119,7 @@ void ProcessSetCommand(string command)
 {
     try
     {
-        var bytes = RESP.Serialize(command);
+        var bytes = RESP.SerializeBatch(new[] { command });
         var response =  connection.SendAsync(bytes).Result;
 
         if (response.Length > 0)
@@ -125,7 +143,7 @@ void ProcessGetCommand(string command)
 {
     try
     {
-        var bytes = RESP.Serialize(command);
+        var bytes = RESP.SerializeBatch(new [] { command});
         var response = connection.SendAsync(bytes).Result;
         if (response.Length > 0)
         {
